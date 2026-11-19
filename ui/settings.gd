@@ -11,8 +11,6 @@ const Kit := preload("res://ui/kit.gd")
 const Menu := preload("res://ui/menu.gd")
 const Keymap := preload("res://ui/keymap.gd")
 
-const KEY_TEXT := ["W", "D", "S", "A"]  # Keymap の向きの順(上・右・下・左)
-const ARROW_TEXT := ["↑", "→", "↓", "←"]
 
 var menu: Menu
 var store: RefCounted
@@ -120,7 +118,7 @@ func _draw_test() -> void:
 	for p in 2:
 		var c := Vector2(400 if p == 0 else 880, 420)
 		var codes: Array = Keymap.P1_KEYS if p == 0 else Keymap.P2_KEYS
-		var texts: Array = KEY_TEXT if p == 0 else ARROW_TEXT
+		var texts: Array = S.KEYTEST_P1 if p == 0 else S.KEYTEST_P2
 		for d in 4:
 			var off: Vector2 = [Vector2(0, -1), Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0)][d]
 			if d == 2:

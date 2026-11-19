@@ -223,6 +223,21 @@ func test_duo_keys_split() -> bool:
 	return true
 
 
+func test_fr27_ctrl_r_on_result_does_nothing() -> bool:
+	var m := _main()
+	kp(m, KEY_X)
+	kp(m, KEY_ENTER)
+	win_match(m)
+	m.current._shown_at -= 1000
+	frames(m, 1)
+	var e := kev(KEY_R)
+	e.ctrl_pressed = true
+	m._input(e)
+	eq(m.screen, "result", "結果画面の Ctrl+R では「もう1回」にしない")
+	_done(m)
+	return true
+
+
 func test_ac20_pause_freezes_and_keeps_queue() -> bool:
 	var m := _main()
 	kp(m, KEY_X)

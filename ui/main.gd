@@ -122,6 +122,8 @@ func _input(event: InputEvent) -> void:
 		return
 	if not (event is InputEventKey):
 		return
+	if screen != "play" and event.pressed and (event.ctrl_pressed or event.meta_pressed or event.alt_pressed):
+		return  # S2 以外の Ctrl・Alt・Meta 付きのキーは操作に数えない(FR-27・共通 §3 の 4。Ctrl+R で「もう1回」にしない)
 	get_viewport().set_input_as_handled()  # Tab・矢印を Godot のフォーカスの移動に使わせない
 	if screen == "keys":
 		_keys_input(event)
