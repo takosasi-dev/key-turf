@@ -3,7 +3,7 @@
 extends RefCounted
 
 const NAME := "KeyTurf"
-const VERSION := "v0.1.0"
+const VERSION := "v0.1.1"
 
 # S0(共通 §6)
 const S0_START := "クリックかキーで始める"

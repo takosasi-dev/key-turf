@@ -21,6 +21,7 @@ var _home := PackedInt32Array()  # 自分の陣地までの歩数(自分の線�
 var _opp_home := PackedInt32Array()  # 相手の陣地までの歩数(相手の線は通れない)
 var _to_trail := PackedInt32Array()  # 相手の線までの歩数(自分の線は通れない)
 var _queue := PackedInt32Array()
+var _avoid := PackedInt32Array()  # 攻めの道で通らないマス(1)
 
 
 func _init(p_player: int, p_level: int, p_seed: int) -> void:
@@ -32,6 +33,7 @@ func _init(p_player: int, p_level: int, p_seed: int) -> void:
 	_opp_home.resize(Grid.N)
 	_to_trail.resize(Grid.N)
 	_queue.resize(Grid.N)
+	_avoid.resize(Grid.N)
 
 
 @warning_ignore("integer_division")
@@ -125,13 +127,22 @@ func _make_plan(g: Grid, head: int) -> void:
 
 
 # ふつう だけ: 相手の線までの歩数 c が、相手が陣地へ戻る歩数 − ATTACK_MARGIN 以下なら、そこへの道の向き。無ければ -1。
+# 相手の頭のマスと、相手の頭が次に入りうるマス(頭の前と左右)は、的からも道からも外す
+# (2026-11-20 の依頼者の判断。直進する相手に正面からぶつかって引き分け・負けになっていた)。
 func _attack(g: Grid, sim: RefCounted, head: int, me: int, o: int) -> int:
-	_field(g, g.trail, o + 1, me, _to_trail)
+	var oh: int = sim.heads[o]
+	_avoid.fill(0)
+	_avoid[oh] = 1
+	var back := (int(sim.dirs[o]) + 2) % 4
+	for d in 4:
+		var n := g.nb[oh * 4 + d]
+		if d != back and n >= 0:
+			_avoid[n] = 1
+	_field(g, g.trail, o + 1, me, _to_trail, _avoid)
 	var c := _via(g, head, me, _to_trail)
 	if c >= INF:
 		return -1
 	_field(g, g.owner, o + 1, o + 1, _opp_home)
-	var oh: int = sim.heads[o]
 	var ot := 0 if g.owner[oh] == o + 1 else _via(g, oh, o + 1, _opp_home)
 	if c > ot - B.ATTACK_MARGIN:
 		return -1
@@ -172,17 +183,18 @@ func _via(g: Grid, head: int, me: int, dist: PackedInt32Array) -> int:
 	return best + 1 if best < INF else INF
 
 
-# 幅優先の歩数の表。src[i] == src_val のマスから始め、線が block のマスと盤の外は通れない。
-func _field(g: Grid, src: PackedInt32Array, src_val: int, block: int, out: PackedInt32Array) -> void:
+# 幅優先の歩数の表。src[i] == src_val のマスから始め、線が block のマスと盤の外(と avoid が 1 のマス)は通れない。
+func _field(g: Grid, src: PackedInt32Array, src_val: int, block: int, out: PackedInt32Array, avoid := PackedInt32Array()) -> void:
 	out.fill(INF)
 	var nb := g.nb
 	var tr := g.trail
 	var q := _queue
+	var use_avoid := not avoid.is_empty()
 	var head := 0
 	var tail := 0
 	var i := src.find(src_val)
 	while i >= 0:
-		if tr[i] != block:
+		if tr[i] != block and not (use_avoid and avoid[i] == 1):
 			out[i] = 0
 			q[tail] = i
 			tail += 1
@@ -194,7 +206,7 @@ func _field(g: Grid, src: PackedInt32Array, src_val: int, block: int, out: Packe
 		var k := c * 4
 		for d in 4:
 			var n := nb[k + d]
-			if n >= 0 and out[n] == INF and tr[n] != block:
+			if n >= 0 and out[n] == INF and tr[n] != block and not (use_avoid and avoid[n] == 1):
 				out[n] = nd
 				q[tail] = n
 				tail += 1

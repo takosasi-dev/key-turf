@@ -163,6 +163,33 @@ func test_ac16_normal_beats_easy() -> bool:
 	return true
 
 
+func test_normal_beats_straight_bot() -> bool:
+	# 2026-11-20 の直し: ふつう は、直進するだけの bot(何もしない bot)に 20 試合で勝ち越す
+	var w := [0, 0, 0]
+	for s in range(1, 21):
+		var m := Match.new(Sim.MODE_NORMAL, false, s)
+		while not m.is_over():
+			m.finish_round(Bots.play_round(m.next_round(), [Bots.Idle.new()]))
+		var r: int = m.result()["winner"]
+		w[0 if r == 1 else (1 if r == 0 else 2)] += 1
+	print("      ふつう 対 何もしない bot(勝-負-分) ", w)
+	ok(w[0] > w[1], "ふつう が勝ち越す: %s" % [w])
+	return true
+
+
+func test_attack_skips_head_and_next_cells() -> bool:
+	# 的は相手の頭のマスと、頭の前・左右のマスを外す。相手の線がそれだけなら攻めない
+	var sim := moving(Sim.MODE_NORMAL)
+	var cpu: Cpu = sim.cpus[1]
+	put(sim, 0, 20, 10, 1)
+	trail(sim, 0, [Vector2i(20, 10), Vector2i(20, 9), Vector2i(20, 11)])
+	ok(cpu._attack(sim.grid, sim, c(22, 10), 2, 0) < 0, "頭と、頭の前・左右の線だけなら攻めない")
+	trail(sim, 0, [Vector2i(19, 10)])
+	put(sim, 1, 19, 12, 0)
+	ok(cpu._attack(sim.grid, sim, c(19, 12), 2, 0) >= 0, "頭の後ろの線は攻める")
+	return true
+
+
 func test_cpu_returns_home_and_captures() -> bool:
 	var sim := Sim.new(Sim.MODE_EASY, B.ROUND_TICKS, 9)
 	var caps := 0
