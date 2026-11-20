@@ -33,23 +33,35 @@ var _keys_label: Label = null
 var _visibility_cb: Variant = null
 var _settings_overlay: Control = null
 var _esc_count := 0
+var debug := false  # ?debug=1: window.ktState に状態を出す(Web の自動の確かめが読むだけ。作りは KeySwat)
+var frame_ms: Array = []
+var _last_frame := 0
 
 
 func _ready() -> void:
 	stage = Control.new()
 	stage.size = Vector2(1280, 720)
 	add_child(stage)
+	get_viewport().size_changed.connect(_center)  # 縦横比が 16:9 でない窓では、余りを背景色にして舞台を真ん中へ(共通 §3 の 1)
+	_center()
 	var bg := ColorRect.new()
 	bg.color = Kit.C_BG
 	stage.add_child(Kit.place(bg, -2000, -2000, 5280, 4720))
 	store = Store.new()
 	_apply_settings()
 	keys_mode = _flag("keys")
+	debug = _flag("debug")
+	if debug:
+		RenderingServer.frame_post_draw.connect(_after_draw)
 	for a: String in OS.get_cmdline_user_args():
 		if a.begins_with("--auto="):
 			auto = a.substr(7)
 	_watch_visibility()
 	_show_gate()
+
+
+func _center() -> void:
+	stage.position = ((get_viewport().get_visible_rect().size - stage.size) / 2.0).floor()
 
 
 static func _flag(flag: String) -> bool:
@@ -269,7 +281,7 @@ func _show_settings(from: String) -> void:
 		pause_view.process_mode = Node.PROCESS_MODE_DISABLED
 		var dim := ColorRect.new()
 		dim.color = Color(Kit.C_BG, 0.96)
-		s.add_child(Kit.place(dim, 0, 0, 1280, 720))
+		s.add_child(Kit.place(dim, -2000, -2000, 5280, 4720))
 		s.move_child(dim, 0)
 		stage.add_child(s)
 		_settings_overlay = s
@@ -329,3 +341,56 @@ func _log_key(ev: InputEventKey) -> void:
 		"unicode": ev.unicode, "echo": ev.echo, "shift": ev.shift_pressed, "ctrl": ev.ctrl_pressed, "alt": ev.alt_pressed, "meta": ev.meta_pressed})
 	if key_log.size() > 40:
 		key_log.pop_front()
+
+
+# --- デバッグ用の窓口(?debug=1 の時だけ。読むだけ。作りは KeySwat) ---
+
+func _after_draw() -> void:
+	var now := Time.get_ticks_usec()
+	if _last_frame > 0 and frame_ms.size() < 20000:
+		frame_ms.append((now - _last_frame) / 1000.0)
+	_last_frame = now
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.ktState=" + JSON.stringify(JSON.stringify(state())), true)
+		if frame_ms.size() % 60 == 0:
+			JavaScriptBridge.eval("window.ktStats=" + JSON.stringify(JSON.stringify(stats())), true)
+
+
+func state() -> Dictionary:
+	var out := {"screen": screen, "paused": pause_view != null, "version": S.VERSION, "keys": key_log.slice(maxi(key_log.size() - 20, 0)),
+		"buttons": {}, "sfx": Sfx.played, "sfx_last": Sfx.last, "unlocked": Sfx.unlocked, "save_failed": store.write_failed,
+		"load_failed": store.load_failed}
+	var root: Control = pause_view if pause_view != null and pause_view.visible else current
+	if root != null:
+		for b in root.find_children("*", "Button", true, false):
+			var btn := b as Button
+			if btn.is_visible_in_tree() and not btn.disabled:
+				var c := btn.global_position - stage.global_position + btn.size / 2  # 舞台の座標(1280×720)
+				out["buttons"][String(btn.name)] = [c.x, c.y]
+	if play != null and play.sim != null:
+		var sn: Dictionary = play.sim.snapshot()
+		sn["owner"] = Array(sn["owner"])
+		sn["trail"] = Array(sn["trail"])
+		sn["pos"] = [play.position.x, play.position.y]
+		sn["wins"] = Array(play.game.wins)
+		sn["practice"] = play.game.is_practice()
+		sn["wait"] = play._wait
+		sn["over"] = play._match_over
+		sn["banner"] = play._banner.text
+		out["play"] = sn
+	if screen == "result" and current is Result:
+		out["headline"] = (current as Result).headline
+	return out
+
+
+func stats() -> Dictionary:
+	return {"frame": _pct(frame_ms)}
+
+
+@warning_ignore("integer_division")
+static func _pct(list: Array) -> Dictionary:
+	if list.is_empty():
+		return {"n": 0}
+	var s := list.duplicate()
+	s.sort()
+	return {"n": s.size(), "p50": s[s.size() / 2], "p95": s[mini(int(ceil(s.size() * 0.95)) - 1, s.size() - 1)], "max": s[-1]}

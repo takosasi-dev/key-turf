@@ -36,8 +36,11 @@ func build(mode: int, result: Dictionary, record: Dictionary, saved: bool) -> vo
 		var counts: Array = r["counts"]
 		var cells := [str(k + 1), S.DRAW_SHORT if rw < 0 else names[rw], S.REASONS[int(r["reason"])],
 			S.PERCENT % (int(counts[0]) * 100 / 1248), S.PERCENT % (int(counts[1]) * 100 / 1248)]
+		# 勝者はその人の色(引き分けは弱い字)、割合はその人の色を淡くして、表を色でも追えるようにする
+		var tints: Array = [Kit.C_DIM, Kit.C_DIM if rw < 0 else Kit.C_TRAIL[rw], Kit.C_TEXT,
+			Kit.C_TRAIL[0].lerp(Kit.C_WHITE, 0.5), Kit.C_TRAIL[1].lerp(Kit.C_WHITE, 0.5)]
 		for c in cols.size():
-			add_child(Kit.place(Kit.label(cells[c], 22, Kit.C_TEXT, 500), cols[c][0], 174 + k * 36, cols[c][1], 34))
+			add_child(Kit.place(Kit.label(cells[c], 22, tints[c], 700 if c == 1 else 500), cols[c][0], 174 + k * 36, cols[c][1], 34))
 	if not record.is_empty():
 		var rec := S.REC_DRAW % [record["win"], record["lose"], record["draw"]] if int(record["draw"]) > 0 else S.REC % [record["win"], record["lose"]]
 		add_child(Kit.place(Kit.label(S.CPU_TOTAL % [S.LEVELS[mode], rec], 24, Kit.C_DIM, 700), 0, 510, 1280, 40))

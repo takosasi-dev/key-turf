@@ -5,6 +5,7 @@ extends "res://tests/suite.gd"
 const MainScene := preload("res://ui/main.tscn")
 const Store := preload("res://save/save_store.gd")
 const Board := preload("res://ui/board.gd")
+const Kit := preload("res://ui/kit.gd")
 
 
 static func kev(pk: int, pressed: bool = true, echo: bool = false) -> InputEventKey:
@@ -401,4 +402,83 @@ func test_capture_fx_and_draw_runs() -> bool:
 	ok(not b.floats.is_empty(), "囲むと「+n」が浮かぶ")
 	ok(not b.reveal.is_empty(), "取ったマスを順に塗る")
 	_done(m)
+	return true
+
+
+# 磨きで足した演出(仕様書 §14.5): 決着の帯は決め手と反対の側(上か下)へ置き、見せ場を隠さない。
+func test_band_avoids_the_decisive_point() -> bool:
+	var m := _main()
+	m.first_match = false
+	kp(m, KEY_X)
+	kp(m, KEY_ENTER)
+	end_round(m, 0)  # 頭は初めの位置(盤の下半分の行)
+	eq(m.play._band.position.y, float(B.BANNER_TOP_Y), "決め手が下半分なら帯は上")
+	ok((m.play._banner_bg as ColorRect).color.is_equal_approx(Color(Kit.C_LAND[0].darkened(0.35), 0.94)), "帯の地は勝った人の色")
+	frames(m, B.ROUND_END_TICKS / 2 + 1)
+	m.play.sim.heads[0] = Grid.idx(8, 2)
+	m.play.sim.heads[1] = Grid.idx(30, 3)
+	end_round(m, 1)
+	eq(m.play._band.position.y, float(B.BANNER_BOTTOM_Y), "決め手が上半分なら帯は下")
+	frames(m, B.ROUND_END_TICKS / 2 + 1)
+	end_round(m, -1, Sim.REASON_HEADON)
+	ok((m.play._banner_bg as ColorRect).color.is_equal_approx(Color(Kit.C_PANEL, 0.94)), "引き分けの帯は色を付けない")
+	_done(m)
+	return true
+
+
+func test_time_band_shows_both_areas() -> bool:
+	var m := _main()
+	m.first_match = false
+	kp(m, KEY_X)
+	kp(m, KEY_ENTER)
+	end_round(m, 0, Sim.REASON_TIME)
+	eq(m.play._banner.text, "あなた の勝ち — 広さ", "時間切れの帯")
+	eq(m.play._banner_sub.text, "2%  −  2%", "2 行目に 2 人の広さ")
+	frames(m, B.ROUND_END_TICKS / 2 + 1)
+	end_round(m, 1, Sim.REASON_CUT)
+	eq(m.play._banner_sub.text, "", "線を切った決着では 2 行目を出さない")
+	_done(m)
+	return true
+
+
+# 試合の決着: 帯の 2 行目に試合の勝ち数を出し、OVER_TICKS(1.5 秒)待ってから結果へ。
+func test_match_over_band_then_result() -> bool:
+	var m := _main()
+	m.first_match = false
+	kp(m, KEY_X)
+	kp(m, KEY_ENTER)
+	m.play.game.wins[0] = B.WINS_TO_WIN - 1
+	end_round(m, 0)
+	eq(m.play._banner_sub.text, "あなた の勝ち  3 − 0", "試合の勝ち数")
+	frames(m, B.OVER_TICKS / 2 - 2)
+	eq(m.screen, "play", "演出の間は結果へ移らない")
+	frames(m, 4)
+	eq(m.screen, "result", "OVER_TICKS の後に結果")
+	_done(m)
+	return true
+
+
+func test_capture_pitch_rises_with_size() -> bool:
+	var m := _main()
+	m.first_match = false
+	kp(m, KEY_X)
+	kp(m, KEY_ENTER)
+	var cells: Array[int] = [Grid.idx(11, 13)]
+	m.play._on_event({"type": "capture", "p": 0, "count": 40, "cells": cells}, {})
+	eq(Sfx.last, "capture", "塗る音")
+	ok(absf(Sfx.last_pitch - pow(2.0, 5.0 / 12.0)) < 0.001, "40 マスは 5 半音上げる")
+	ok(m.play._pop_at[0] > 0, "割合の字が跳ねる")
+	m.play._on_event({"type": "capture", "p": 1, "count": 3, "cells": cells}, {})
+	ok(absf(Sfx.last_pitch - 1.0) < 0.001, "小さな囲みはそのまま")
+	_done(m)
+	return true
+
+
+func test_float_stays_inside_board_near_top() -> bool:
+	var b := Board.new()
+	var cells: Array[int] = [Grid.idx(20, 0)]
+	b.on_capture({"p": 1, "count": 8, "cells": cells}, Grid.idx(20, 0), false)
+	ok((b.floats[0][1] as Vector2).y - B.FLOAT_RISE_PX >= B.GRID_Y, "上の行で囲んでも「+n」は盤の中で浮かぶ")
+	eq(int(b.floats[0][4]), 1, "数字は囲んだ人の色")
+	b.free()
 	return true

@@ -3,7 +3,7 @@
 extends RefCounted
 
 const NAME := "KeyTurf"
-const VERSION := "v0.1.1"
+const VERSION := "v0.2.0"
 
 # S0(共通 §6)
 const S0_START := "クリックかキーで始める"
@@ -35,6 +35,7 @@ const PLUS := "+%d"
 const PRACTICE_NOTE := "線を引いて陣地へ戻ると、囲んだ所が取れる。数えないラウンド"
 const WIN := "%s の勝ち — %s"
 const DRAW := "引き分け — %s"
+const SCORE_PCT := "%d%%  −  %d%%"  # 時間切れの帯の 2 行目(2 人の広さ。磨きで足した)
 const ESC := "Esc"
 
 # 理由(core/sim.gd の REASON_* の順)

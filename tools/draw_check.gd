@@ -44,7 +44,7 @@ func _process(_delta: float) -> bool:
 			sim.grid.trail[Grid.idx(21, 5)] = 1
 			sim.grid.trail[Grid.idx(30, 8)] = 2
 			b.snap = sim.snapshot()
-			b.on_round_end(k % 2, k % 8)
+			b.on_round_end(k % 2, k % 8, Array(sim.heads))
 	elif frame == 110:
 		print("DRAW board_draws=%d" % main.play.board.draws)
 		keys = (load("res://ui/settings.gd") as GDScript).new()
