@@ -75,3 +75,17 @@ func test_each_source_has_header_comment() -> bool:
 		for f: String in _files(dir):
 			ok(FileAccess.get_file_as_string(f).begins_with("# "), "%s の冒頭に責務のコメント" % f)
 	return true
+
+
+# v0.3.0 の題字・数字の字体(Lilita One)に、それで出す字(題字・割合・時間・勝ち数・+n)が全部あるか。
+func test_display_font_has_its_glyphs() -> bool:
+	var font := load("res://assets/fonts/LilitaOne-Regular.ttf") as FontFile
+	ok(font != null, "題字の字体を読める")
+	if font == null:
+		return true
+	var missing := ""
+	for c in S.NAME + "0123456789%:+− ":
+		if c != " " and not font.has_char(c.unicode_at(0)):
+			missing += c
+	eq(missing, "", "題字の字体に無い文字")
+	return true

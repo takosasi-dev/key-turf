@@ -8,7 +8,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-export const WEB = path.join(ROOT, 'build', 'web');
+// KT_WEB で前の版の書き出しも配れる(起動の秒数の比べ)。相対のままジャンクションを作ると一時フォルダからの相対になって、何も配れない(Godot が起動しない)ので絶対にする
+export const WEB = path.resolve(process.env.KT_WEB || path.join(ROOT, 'build', 'web'));
 export const OUT = path.join(ROOT, 'build', 'web_shots');
 export const SAVE_KEY = 'key-turf/save'; // save/save_store.gd の WEB_KEY
 const HTTP_PORT = Number(process.env.KT_HTTP_PORT || 8815);

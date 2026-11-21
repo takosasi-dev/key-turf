@@ -1,4 +1,4 @@
-"""効果音 10 個(仕様書 §9.10)を合成して assets/sfx/<名前>.wav に書く。標準ライブラリだけ・乱数は使わない(何度回しても同じバイト列)。
+"""効果音 12 個(仕様書 §9.10 の 10 個と、v0.3.0 で足した UI の 2 個)を合成して assets/sfx/<名前>.wav に書く。標準ライブラリだけ・乱数は使わない(何度回しても同じバイト列)。
 16bit PCM・モノラル・22050 Hz。合計 300 KB 以下(非機能 NFR-7)。作りは KeySwat の tools/gen_sfx.py。
 
     python tools/gen_sfx.py
@@ -86,6 +86,14 @@ def main():
     for k, f in enumerate([523, 659, 784, 1047]):
         tone(b, k * 0.12, 0.34, f, square=True, decay=6)  # 試合の終わり
     write("over", b, 0.5)
+    b = []
+    tone(b, 0, 0.035, 880, 820, gain=0.8, decay=70)
+    tone(b, 0, 0.02, 2640, decay=120, gain=0.25)  # UI の選択(v0.3.0): 盤に駒を置くような短い木の音
+    write("select", b, 0.28)
+    b = []
+    tone(b, 0, 0.05, 660, decay=40)
+    tone(b, 0.045, 0.09, 990, decay=30)  # UI の決定(v0.3.0): 上がる 2 音
+    write("confirm", b, 0.35)
     total = sum(p.stat().st_size for p in OUT.glob("*.wav"))
     print(f"{len(list(OUT.glob('*.wav')))} 個、合計 {total:,} バイト")
 

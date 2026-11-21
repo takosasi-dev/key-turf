@@ -5,10 +5,7 @@
 //     node tests/web/check.mjs            手元の build/web を配って確かめる
 //     KT_URL=https://…/key-turf/ node tests/web/check.mjs   公開した物を確かめる
 //     node tests/web/check.mjs --cpu      CPU と(やさしい)を JS の bot で 1 試合(AC-19 のブラウザ分。別の起動にした)
-//     node tests/web/check.mjs --docs     README の画像を docs/ に写す
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
-import path from 'node:path';
-import { expect, failureCount, open, OUT, ROOT, serve, sleep } from './lib.mjs';
+import { expect, failureCount, open, serve, sleep } from './lib.mjs';
 
 const CPU = process.argv.includes('--cpu');
 const W = 48;
@@ -144,15 +141,6 @@ async function botMatch(label, shotsWanted) {
 	return null;
 }
 
-// --docs: README の画像を docs/ に写す(撮れている物だけ。--cpu の起動で中盤、ふつうの起動で囲みと切った瞬間)
-function docs() {
-	if (!process.argv.includes('--docs')) return;
-	mkdirSync(path.join(ROOT, 'docs'), { recursive: true });
-	for (const [from, to] of [['cpu_late', 'play'], ['s2_capture_p1_102_80', 'capture'], ['s2_cut_150', 'cut']]) {
-		if (existsSync(path.join(OUT, from + '.png'))) copyFileSync(path.join(OUT, from + '.png'), path.join(ROOT, 'docs', to + '.png'));
-	}
-}
-
 const CIRCLE = Array.from({ length: 10 }, () => [[1, 1], [2, 1], [3, 1], [0, 1]]).flat();
 const ROUNDS = {
 	// P1 が P2 の線を踏む(P2 の線は y 4、P1 は x 28 を上る。29 回目の移動で切る)
@@ -207,7 +195,6 @@ if (CPU) {
 		site.stop();
 	}
 	console.log(failureCount() === 0 ? '全部 OK' : `${failureCount()} 件 NG`);
-	docs();
 	process.exit(failureCount() === 0 ? 0 : 1);
 }
 
@@ -216,7 +203,7 @@ try {
 	const s0 = await page.waitState((s) => s.screen === 'gate', 30000);
 	expect(!!s0, `S0 が出る(ページを開いてから ${Date.now() - page.t0} ms。NFR-5)`);
 	const loadedAt = Date.now();
-	expect(s0?.version === 'v0.2.0' || !!process.env.KT_ANY_VERSION, `版: ${s0?.version}`);
+	expect(s0?.version === 'v0.3.0' || !!process.env.KT_ANY_VERSION, `版: ${s0?.version}`);
 	await page.evaluate(`localStorage.setItem('parry-duel/save', '{"version":1,"keep":"me"}')`);
 	await sleep(300);
 	await shot('s0');
@@ -361,6 +348,5 @@ try {
 	await page.close();
 	site.stop();
 }
-docs();
 console.log(failureCount() === 0 ? '全部 OK' : `${failureCount()} 件 NG`);
 process.exit(failureCount() === 0 ? 0 : 1);

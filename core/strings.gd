@@ -3,7 +3,7 @@
 extends RefCounted
 
 const NAME := "KeyTurf"
-const VERSION := "v0.2.0"
+const VERSION := "v0.3.0"
 
 # S0(共通 §6)
 const S0_START := "クリックかキーで始める"
@@ -17,16 +17,12 @@ const B_DUO := "ふたりで"
 const B_EASY := "CPU と(やさしい)"
 const B_NORMAL := "CPU と(ふつう)"
 const B_SETTINGS := "設定"
-const DUO_KEYS := "左 W A S D ・ 右 ↑←↓→"
 const REC := "%d勝 %d敗"
 const REC_DRAW := "%d勝 %d敗 %d分"
 const LOAD_FAILED := "保存を読めなかったので、記録を初めからにした"
 
 # S2 プレイ。人の名前は [ふたりで, やさしい, ふつう] の mode ごとに [P1, P2]
 const NAMES := [["P1", "P2"], ["あなた", "CPU やさしい"], ["あなた", "CPU ふつう"]]
-const KEYS_P1 := "W A S D"
-const KEYS_P2 := "↑←↓→"
-const KEYS_SOLO := "W A S D / 矢印"
 const PERCENT := "%d%%"
 const ROUND := "ラウンド %d"
 const PRACTICE := "練習(数えない)"
@@ -64,7 +60,6 @@ const ON := "入"
 const OFF := "切"
 const B_BACK := "戻る"
 const KEYTEST_P1 := ["W", "D", "S", "A"]  # 向きの順(上・右・下・左)
-const KEYTEST_P2 := ["↑", "→", "↓", "←"]
 const KEYTEST_NOTE := "2 人で同時に押して、両方が光るかを見る。Esc で戻る"
 const PAUSE := "一時停止"
 const B_RESUME := "続ける"
@@ -72,3 +67,15 @@ const B_RESTART := "やり直す"
 
 # キーの確かめ(共通 §3 の 22。?keys=1)
 const KEYS_TITLE := "キーの確かめ(押したキーを下に出す。Esc 2 回でタイトルへ)"
+
+# v0.3.0 で足した文言(キーの案内・結果の見出し・設定の値。矢印は字でなく絵で描く)
+const HINT_LEFT := "左"
+const HINT_RIGHT := "右"
+const HINT_OR := "か"
+const HINT_SELECT := "選ぶ"
+const HINT_DECIDE := "決める"
+const HINT_CHANGE := "変える"
+const RES_WINNER := "%s の勝ち"
+const RES_DRAW_TITLE := "引き分け"
+const COL_AREA := "広さ"
+const SCORE := "%d  −  %d"  # 結果の大きな勝ち数(v0.3.0)

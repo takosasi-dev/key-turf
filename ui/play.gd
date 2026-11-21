@@ -1,6 +1,7 @@
 # S2 プレイ(画面設計書 §3)。試合(core/match)のラウンドを順に作り、sim をたまった時間ぶん進め(1 フレーム 8 tick まで)、
 # events で演出と音を出し、snapshot を盤に渡す。ゲームの決まりは持たない(INV-1)。押したキーは ui/keymap で人と向きにして渡すだけ。
 # ラウンドの間(ROUND_END_TICKS)と試合の決着から結果まで(OVER_TICKS)は、ここで tick を数える(時刻でなく delta で数える)。
+# v0.3.0: 上の帯は 2 陣の板(左 P1 の点・右 P2 の斜線)と真ん中の時計の板。割合を一番大きく、残り時間を次に。キーは字でなく絵のキー。
 extends Control
 
 signal finished(result: Dictionary)
@@ -15,6 +16,10 @@ const Bots := preload("res://core/bots.gd")
 const Kit := preload("res://ui/kit.gd")
 const Keymap := preload("res://ui/keymap.gd")
 const Board := preload("res://ui/board.gd")
+const KeyHint := preload("res://ui/keyhint.gd")
+
+const PLATE := [Rect2(64, 4, 452, 60), Rect2(764, 4, 452, 60)]  # 上の帯の 2 陣の板
+const CLOCK := Rect2(548, 4, 184, 60)
 
 var game: Match = null
 var sim: Sim = null
@@ -48,43 +53,56 @@ var _dot_at := -100000  # 勝ち数の ● が増えた時刻
 var _dot_p := -1
 var _note: Label
 var _ime: Label
+var _band_deco: Control
+var _band_w := -1
+var _count_at := -100000  # 数えの字が変わった時刻
+var _sec_at := -100000  # 残り 5 秒からの 1 秒ごとの時刻
 
 
 func _ready() -> void:
 	size = Vector2(1280, 720)
+	var plates := Control.new()
+	plates.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(Kit.place(plates, 0, 0, 1280, 72))
+	plates.draw.connect(_draw_plates.bind(plates))
 	board = Board.new()
 	Kit.place(board, 0, 0, 1280, 720)
 	add_child(board)
 	for p in 2:
-		var name_l := Kit.label("", 22, Kit.C_TEXT, 700)
-		var keys_l := Kit.label("", 15, Kit.C_DIM, 500)
-		var pct := Kit.label("", 32, Kit.C_TRAIL[p], 800)  # 割合は人の色(誰の数字かを色でも分ける)
+		var name_l := Kit.label("", 20, Kit.C_TEXT, 800)
+		var keys_l := KeyHint.new([], HORIZONTAL_ALIGNMENT_LEFT if p == 0 else HORIZONTAL_ALIGNMENT_RIGHT, 22.0)
+		var pct := Kit.num_label("", 44, Kit.C_TRAIL[p].lerp(Kit.C_WHITE, 0.15))  # 割合は人の色で一番大きく(誰の数字かは板の側と印でも分かる)
 		var al := HORIZONTAL_ALIGNMENT_LEFT if p == 0 else HORIZONTAL_ALIGNMENT_RIGHT
 		name_l.horizontal_alignment = al
-		keys_l.horizontal_alignment = al
-		add_child(Kit.place(name_l, 64 if p == 0 else 1020, 4, 196, 32))
-		add_child(Kit.place(keys_l, 64 if p == 0 else 1020, 36, 196, 24))
-		add_child(Kit.place(pct, 264 if p == 0 else 936, 8, 80, 52))
+		pct.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if p == 0 else HORIZONTAL_ALIGNMENT_LEFT
+		var plate: Rect2 = PLATE[p]
+		add_child(Kit.place(name_l, plate.position.x + 38 if p == 0 else plate.end.x - 238, 6, 200, 28))
+		add_child(Kit.place(keys_l, plate.position.x + 12 if p == 0 else plate.end.x - 302, 36, 290, 24))
+		add_child(Kit.place(pct, plate.end.x - 132 if p == 0 else plate.position.x + 12, 2, 120, 62))
 		pct.pivot_offset = pct.size / 2.0
 		_hud["name%d" % p] = name_l
 		_hud["keys%d" % p] = keys_l
 		_hud["pct%d" % p] = pct
-	var time_l := Kit.label("", 32, Kit.C_TEXT, 800)
-	time_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	add_child(Kit.place(time_l, 520, 8, 136, 52))
+	var time_l := Kit.num_label("", 34, Kit.C_TEXT)
+	add_child(Kit.place(time_l, CLOCK.position.x, 1, CLOCK.size.x, 40))
+	time_l.pivot_offset = time_l.size / 2.0
 	_hud["time"] = time_l
-	var round_l := Kit.label("", 18, Kit.C_DIM, 700)
-	round_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	add_child(Kit.place(round_l, 668, 8, 180, 52))
+	var round_l := Kit.label("", 15, Kit.C_DIM, 700)
+	add_child(Kit.place(round_l, CLOCK.position.x, 35, CLOCK.size.x, 22))  # 時計の板の下の縁(y 62)に字を掛けない
 	_hud["round"] = round_l
-	_count = Kit.label("", 120, Kit.C_TEXT, 800)
-	add_child(Kit.place(_count, 0, 300, 1280, 160))
+	_count = Kit.num_label("", 150, Kit.C_PAPER)
+	add_child(Kit.place(_count, 0, 290, 1280, 180))
+	_count.pivot_offset = _count.size / 2.0
 	_band = Control.new()
 	_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(Kit.place(_band, 0, 340, 1280, 116))
 	_banner_bg = ColorRect.new()
 	_banner_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_band.add_child(Kit.place(_banner_bg, 64, 0, 1152, 80))
+	_band_deco = Control.new()
+	_band_deco.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_band.add_child(Kit.place(_band_deco, 64, 0, 1152, 116))
+	_band_deco.draw.connect(_draw_band_deco)
 	for y: int in [0, 77]:
 		var edge := ColorRect.new()
 		edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -95,10 +113,24 @@ func _ready() -> void:
 	_banner_sub = Kit.label("", 26, Kit.C_TEXT, 800)
 	_band.add_child(Kit.place(_banner_sub, 0, 80, 1280, 36))
 	_note = Kit.label(S.PRACTICE_NOTE, 20, Kit.C_TEXT, 700)
-	add_child(Kit.place(_note, 0, 660, 1280, 32))
+	_note.add_theme_stylebox_override("normal", _note_box(Kit.C_PAPER))
+	add_child(Kit.place(_note, 300, 650, 680, 40))
 	_ime = Kit.label(S.IME, 22, Kit.C_WARN, 700)
-	add_child(Kit.place(_ime, 0, 620, 1280, 36))
+	_ime.add_theme_stylebox_override("normal", _note_box(Kit.C_WARN))
+	add_child(Kit.place(_ime, 300, 600, 680, 44))
 	_band.visible = false
+
+
+# 案内の札の地(墨の板に、色の縁を左に。main の note_box と同じ形)。
+static func _note_box(edge: Color) -> StyleBoxFlat:
+	var b := StyleBoxFlat.new()
+	b.bg_color = Color(Kit.C_INK, 0.9)
+	b.border_color = edge
+	b.border_width_left = 6
+	b.set_corner_radius_all(4)
+	b.content_margin_left = 18
+	b.content_margin_right = 18
+	return b
 
 
 # mode: 0 = ふたりで、1 = やさしい、2 = ふつう(FR-1)。
@@ -111,8 +143,10 @@ func start(p_mode: int, with_practice: bool, p_seed: int) -> void:
 	var names: Array = S.NAMES[mode]
 	for p in 2:
 		_hud["name%d" % p].text = names[p]
-	_hud["keys0"].text = S.KEYS_P1 if mode == Sim.MODE_DUO else S.KEYS_SOLO
-	_hud["keys1"].text = S.KEYS_P2 if mode == Sim.MODE_DUO else ""
+	var wasd := ["W", "A", "S", "D"]
+	var arrows := ["up", "left", "down", "right"]
+	_hud["keys0"].items = [[wasd, ""]] if mode == Sim.MODE_DUO else [[wasd, S.HINT_OR], [arrows, ""]]  # CPU の試合では矢印も P1(E-15)
+	_hud["keys1"].items = [[arrows, ""]] if mode == Sim.MODE_DUO else []
 	_next_round()
 
 
@@ -273,7 +307,21 @@ func _show_band(w: int, why: int, focus_y: float) -> void:
 	(_band_edges[1] as ColorRect).position.y = _banner_bg.size.y - 3.0
 	_band_from = 0.0 if w < 0 else (-1.0 if w == 0 else 1.0)
 	_band_at = Time.get_ticks_msec()
+	_band_w = w
+	_band_deco.size.y = _banner_bg.size.y
+	_band_deco.queue_redraw()
 	_band.visible = true
+
+
+# 帯の飾り: 勝った陣の模様を薄く敷き、左に旗(引き分けは 2 つの印)。色だけで誰の勝ちかを伝えない。
+func _draw_band_deco() -> void:
+	var r := Rect2(Vector2.ZERO, _band_deco.size)
+	if _band_w >= 0:
+		Kit.draw_pattern(_band_deco, r.grow_individual(0, -6, 0, -6), _band_w, Color(Kit.C_TRAIL[_band_w], 0.18), 16.0)
+		Kit.draw_flag(_band_deco, Vector2(40, r.size.y / 2.0 + 26), 52.0, _band_w, Kit.C_TRAIL[_band_w])
+	else:
+		for p in 2:
+			Kit.draw_mark(_band_deco, Vector2(44 + p * 30, r.size.y / 2.0), p, 18.0, Kit.C_TRAIL[p])
 
 
 # 時刻で動かす演出(帯が横から入る・割合の字が跳ねる)。Tween を使わないのは、テストが _process を手で回して値で確かめるため。
@@ -285,6 +333,10 @@ func _animate(now: int) -> void:
 		var j := clampf(float(now - int(_pop_at[p])) / B.HUD_POP_MS, 0.0, 1.0)
 		var sc := 1.0 + B.HUD_POP_SCALE * (1.0 - j) * (1.0 - j)
 		(_hud["pct%d" % p] as Label).scale = Vector2(sc, sc)
+	var c := 1.0 - clampf(float(now - _count_at) / B.COUNT_POP_MS, 0.0, 1.0)
+	_count.scale = Vector2.ONE * (1.0 + (0.0 if reduce_flash else 0.45 * c * c))
+	var t := 1.0 - clampf(float(now - _sec_at) / B.HUD_POP_MS, 0.0, 1.0)
+	(_hud["time"] as Label).scale = Vector2.ONE * (1.0 + (0.0 if reduce_flash else 0.25 * t * t))
 
 
 func _shake(px: float, ms: int) -> void:
@@ -309,32 +361,54 @@ func _refresh() -> void:
 	_hud["time"].add_theme_color_override("font_color", Kit.C_WARN if last else Kit.C_TEXT)
 	if last and secs != _last_sec and secs > 0:
 		Sfx.play("go", B.COUNT_PITCH)  # 残り 5 秒からは 1 秒ごとに短い音
+		_sec_at = Time.get_ticks_msec()
 	_last_sec = secs
 	# 数え 3・2・1(各 0.5 秒)、その後「はじめ」0.5 秒
 	var phase: int = _snap["phase"]
+	var was := _count.text
 	if phase == Sim.PHASE_COUNT:
 		_count.text = str(3 - int(_snap["count_tick"]) / B.COUNT_STEP_TICKS)
 	elif phase == Sim.PHASE_MOVE and int(_snap["round_ticks"]) - rem < B.GO_TICKS:
 		_count.text = S.GO
 	else:
 		_count.text = ""
+	if _count.text != was and _count.text != "":
+		_count_at = Time.get_ticks_msec()
 	_note.visible = _practice and _wait < 0
+	# 頭が下の端の近くに来たら、案内の札を薄くして盤を隠さない(v0.3.0)
+	var low := false
+	for h: int in _snap["heads"]:
+		low = low or Board.center(h).y > _note.position.y - 40.0
+	_note.modulate.a = 0.22 if low else 1.0
 	queue_redraw()
 
 
-# 上の帯の勝ち数: ● が取ったラウンド、○ が残り(練習の間は出さない)。
+# 上の帯: 2 陣の板(陣の色を暗くした地に模様、下の縁は線の色)と時計の板。板の端に陣の印。
+# 勝ち数: 取ったラウンドは塗った印、残りは輪郭だけの印(P1 は丸・P2 は四角。練習の間は出さない)。
+# 板は動かないので、別の Control に 1 回だけ描く(毎フレーム描き直すと、窓なし Chrome のソフト描画で 1 フレームが 6 ms → 30 ms に重くなった)。
+func _draw_plates(c: Control) -> void:
+	for p in 2:
+		var r: Rect2 = PLATE[p]
+		c.draw_rect(r, Color(Kit.C_LAND[p].darkened(0.62), 0.96))
+		Kit.draw_pattern(c, r, p, Color(Kit.C_TRAIL[p], 0.13), 12.0)
+		c.draw_rect(Rect2(r.position.x, r.end.y - 3, r.size.x, 3), Color(Kit.C_TRAIL[p], 0.8))
+		Kit.draw_mark(c, Vector2(r.position.x + 22 if p == 0 else r.end.x - 22, r.position.y + 20), p, 16.0, Kit.C_TRAIL[p])
+	c.draw_rect(CLOCK, Color(Kit.C_INK, 0.95))
+	c.draw_rect(CLOCK.grow(-1), Kit.C_EDGE, false, 2.0)
+
+
 func _draw() -> void:
 	if game == null or _practice:
 		return
 	var pop := clampf(float(Time.get_ticks_msec() - _dot_at) / B.RING_MS, 0.0, 1.0)
 	for p in 2:
 		for k in B.WINS_TO_WIN:
-			var x := 368 + k * 22 if p == 0 else 912 - k * 22
-			var c := Vector2(x, 34)
+			var x := 300 + k * 24 if p == 0 else 980 - k * 24
+			var c := Vector2(x, 21)
 			if k < game.wins[p]:
-				var fresh := p == _dot_p and k == game.wins[p] - 1 and pop < 1.0  # 今取った ● は大きく出て輪が広がる
-				draw_circle(c, 7.0 * (1.0 + 0.6 * (1.0 - pop) if fresh else 1.0), Kit.C_TRAIL[p], true, -1.0, true)
+				var fresh := p == _dot_p and k == game.wins[p] - 1 and pop < 1.0  # 今取った印は大きく出て輪が広がる
+				Kit.draw_mark(self, c, p, 15.0 * (1.0 + 0.6 * (1.0 - pop) if fresh else 1.0), Kit.C_TRAIL[p])
 				if fresh:
-					draw_circle(c, 9.0 + 20.0 * pop, Color(Kit.C_TRAIL[p], 1.0 - pop), false, 2.0, true)
+					Kit.draw_mark(self, c, p, 18.0 + 40.0 * pop, Color(Kit.C_TRAIL[p], 1.0 - pop), false, 2.0)
 			else:
-				draw_circle(c, 7.0, Kit.C_DIM, false, 2.0, true)
+				Kit.draw_mark(self, c, p, 14.0, Color(Kit.C_DIM, 0.8), false, 2.0)

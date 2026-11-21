@@ -1,5 +1,6 @@
 # キーボードでボタンを選ぶ(共通 §3 の 18)。↑↓ で選び、Enter か Space で押す。マウスでも押せる。
-# 押した時の動きはボタンの pressed に繋いでおく。
+# 選んだボタンは theme の SelButton(象牙の駒)にする。押した時の動きはボタンの pressed に繋いでおく。
+# 選ぶと「select」、押すと「confirm」の小さな音(v0.3.0)。Enter・Space は押した瞬間に効く(離すのを待たない)。
 extends RefCounted
 
 const Kit := preload("res://ui/kit.gd")
@@ -13,19 +14,24 @@ func _init(list: Array[Button], first: int = 0) -> void:
 	sel = clampi(first, 0, maxi(buttons.size() - 1, 0))
 	for b in buttons:
 		b.mouse_entered.connect(func() -> void: select(buttons.find(b)))
+		b.pressed.connect(func() -> void: Sfx.play("confirm"))
 	_paint()
 
 
 func select(i: int) -> void:
-	if i < 0 or i >= buttons.size():
+	if i < 0 or i >= buttons.size() or i == sel:
 		return
 	sel = i
 	_paint()
+	Sfx.play("select")
 
 
 func _paint() -> void:
 	for k in buttons.size():
 		Kit.set_selected(buttons[k], k == sel)
+		for c in buttons[k].get_children():
+			if c is CanvasItem:
+				(c as CanvasItem).queue_redraw()
 
 
 # キーを受ける。使ったら真。
@@ -48,4 +54,3 @@ func key(ev: InputEventKey) -> bool:
 
 func _move(d: int) -> void:
 	select((sel + d + buttons.size()) % buttons.size())
-	Sfx.play("turn")

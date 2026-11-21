@@ -1,5 +1,6 @@
 # 描画の道を窓なしで 1 回ずつ通す確かめ(Web のリリース版はスクリプトエラーで黙って止まるため)。
 # 大きな囲み(和音・揺れ・浮かぶ数字)、決着の演出 8 種(点滅を弱める 入・切)、設定のキーの確かめの十字を描かせ、描いた回数を印字する。
+# v0.3.0 で、一時停止の板・タイトル(題字・背景・切り替わり)・結果(旗・行の帯)・キーの確かめの画面も通す。
 # 実行: python tools/gd.py run res://tools/draw_check.gd(出力に SCRIPT ERROR が無ければよい)
 extends SceneTree
 
@@ -55,6 +56,23 @@ func _process(_delta: float) -> bool:
 		keys.key(_ev(KEY_UP))
 	elif frame == 120:
 		print("DRAW keytest held=%d" % keys.held.size())
+		keys.queue_free()
+		main._pause()  # v0.3.0: 一時停止の板
+	elif frame == 130:
+		print("DRAW pause=%s" % (main.pause_view != null))
+		main._on_pause("title")  # 題字・背景の陣取り・切り替わりのマス
+	elif frame == 150:
+		print("DRAW title logo wipe=%.2f" % main.wipe.progress())
+		main.run_mode = Sim.MODE_EASY
+		main.play = null
+		main._on_finished({"winner": 0, "wins": [3, 1], "rounds": [{"winner": 0, "reason": 0, "counts": [300, 200]},
+			{"winner": 1, "reason": 2, "counts": [100, 400]}, {"winner": -1, "reason": 4, "counts": [250, 250]},
+			{"winner": 0, "reason": 6, "counts": [500, 480]}]})  # 旗・散る印・行の帯
+	elif frame == 200:
+		print("DRAW result screen=%s score=%s" % [main.screen, main.current._score.text])
+		main._show_keys()
+	elif frame == 210:
+		print("DRAW keys screen=%s" % main.screen)
 		quit()
 	return false
 

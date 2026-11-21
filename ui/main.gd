@@ -13,6 +13,10 @@ const Title := preload("res://ui/title.gd")
 const Result := preload("res://ui/result.gd")
 const Settings := preload("res://ui/settings.gd")
 const Pause := preload("res://ui/pause.gd")
+const Backdrop := preload("res://ui/backdrop.gd")
+const Wipe := preload("res://ui/wipe.gd")
+const Logo := preload("res://ui/logo.gd")
+const KeyHint := preload("res://ui/keyhint.gd")
 
 const MODES := {"duo": Sim.MODE_DUO, "easy": Sim.MODE_EASY, "normal": Sim.MODE_NORMAL}
 
@@ -29,6 +33,11 @@ var keys_mode := false
 var auto := ""  # smoke の入口(easy / normal / duo)。空なら人が遊ぶ
 var key_log: Array = []  # 届いたキーの中身(直近 40 個。キーの確かめが読む)
 var _touch_note: Label = null
+var _gate_start: Label = null
+var backdrop: Backdrop
+var wipe: Wipe
+var view := Rect2(0, 0, 1280, 720)  # 舞台の座標で、窓に見えている範囲
+var entering: Array = []  # [画面, 始めた時刻(ms), 長さ(ms), 上がる幅(px)]。_process が濃さと位置を進める
 var _keys_label: Label = null
 var _visibility_cb: Variant = null
 var _settings_overlay: Control = null
@@ -42,12 +51,13 @@ func _ready() -> void:
 	stage = Control.new()
 	stage.size = Vector2(1280, 720)
 	add_child(stage)
-	get_viewport().size_changed.connect(_center)  # 縦横比が 16:9 でない窓では、余りを背景色にして舞台を真ん中へ(共通 §3 の 1)
-	_center()
-	var bg := ColorRect.new()
-	bg.color = Kit.C_BG
-	stage.add_child(Kit.place(bg, -2000, -2000, 5280, 4720))
+	backdrop = Backdrop.new()
+	stage.add_child(Kit.place(backdrop, 0, 0, 1280, 720))
+	wipe = Wipe.new()
+	stage.add_child(Kit.place(wipe, 0, 0, 1280, 720))
 	store = Store.new()
+	get_viewport().size_changed.connect(_layout)  # 縦横比が 16:9 でない窓では、余りにも卓の背景を敷いて舞台を真ん中へ(共通 §3 の 1)
+	_layout()
 	_apply_settings()
 	keys_mode = _flag("keys")
 	debug = _flag("debug")
@@ -60,8 +70,65 @@ func _ready() -> void:
 	_show_gate()
 
 
-func _center() -> void:
-	stage.position = ((get_viewport().get_visible_rect().size - stage.size) / 2.0).floor()
+# 舞台を見えている範囲の真ん中に置き、背景と切り替わりにその範囲を渡す(project.godot の aspect=expand)。
+func _layout() -> void:
+	var vs := get_viewport().get_visible_rect().size
+	stage.position = ((vs - stage.size) / 2.0).floor()
+	view = Rect2(-stage.position, vs)
+	backdrop.view = view
+	wipe.view = view
+	backdrop.queue_redraw()
+	for c in stage.get_children():
+		if c.has_method("set_view"):
+			c.set_view(view)
+	if pause_view != null:
+		pause_view.set_view(view)
+
+
+# 点滅を弱める 入は、画面の切り替わり・題字・背景・はね などの動きも止める(動きを減らす設定を兼ねる)。
+func reduce_motion() -> bool:
+	return bool(store.settings()["reduce_flash"])
+
+
+# 新しい画面を舞台に置き、current にする。motion: "wipe"(マスが縮んで消え、薄く→濃く)/ "fade"(薄く→濃くだけ)/ "none"。
+# 切り替えはその場で済ませ、動きは上に重ねるだけ(動いている間のキーも新しい画面に届く)。
+func _show(node: Control, motion: String) -> void:
+	stage.add_child(node)
+	stage.move_child(wipe, -1)
+	if node.has_method("set_view"):
+		node.set_view(view)
+	current = node
+	if motion != "none" and not reduce_motion():
+		_animate_in(node, B.ENTER_MS, B.ENTER_RISE_PX if motion == "wipe" else 0.0)
+		if motion == "wipe":
+			wipe.run()
+
+
+func _animate_in(node: Control, ms: int, rise: float) -> void:
+	node.modulate.a = 0.0
+	entering.append([node, Time.get_ticks_msec(), ms, rise])
+
+
+# 入りの動きの濃さ(0→1)。時刻だけで決まる。
+static func enter_alpha(since_ms: int, ms: int) -> float:
+	return Kit.ease_out(float(since_ms) / ms)
+
+
+func _step_entering() -> void:
+	var now := Time.get_ticks_msec()
+	var keep: Array = []
+	for e: Array in entering:
+		var node: Variant = e[0]
+		if not is_instance_valid(node) or not (node as Control).is_inside_tree():
+			continue
+		var c := node as Control
+		var k := enter_alpha(now - int(e[1]), int(e[2]))
+		c.modulate.a = k
+		if c != play:  # play は揺れで自分の位置を毎フレーム決める
+			c.position.y = float(e[3]) * (1.0 - k)
+		if k < 1.0:
+			keep.append(e)
+	entering = keep
 
 
 static func _flag(flag: String) -> bool:
@@ -80,9 +147,11 @@ func _clear() -> void:
 		pause_view.queue_free()
 		pause_view = null
 	for c in stage.get_children():
-		if c is ColorRect and c.get_index() == 0:
+		if c == backdrop or c == wipe:
 			continue
 		c.queue_free()
+	entering.clear()
+	_gate_start = null
 	current = null
 	play = null
 	_settings_overlay = null
@@ -90,6 +159,9 @@ func _clear() -> void:
 
 func _set_screen(s: String) -> void:
 	screen = s
+	backdrop.demo = s in ["gate", "title"]
+	backdrop.animate = not reduce_motion()
+	backdrop.queue_redraw()
 	if auto != "":
 		var extra := ""
 		if s == "result" and current != null:
@@ -103,14 +175,18 @@ func _show_gate() -> void:
 	_clear()
 	var g := Control.new()
 	g.size = Vector2(1280, 720)
-	g.add_child(Kit.place(Kit.label(S.NAME, 72, Kit.C_TEXT, 800), 0, 220, 1280, 100))
-	g.add_child(Kit.place(Kit.label(S.S0_START, 28, Kit.C_TEXT, 500), 0, 360, 1280, 44))
-	g.add_child(Kit.place(Kit.label(S.S0_KEYBOARD, 18, Kit.C_DIM), 0, 410, 1280, 30))
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var logo := Logo.new()
+	logo.animate = not reduce_motion()
+	g.add_child(Kit.place(logo, 0, 170, 1280, 200))
+	_gate_start = Kit.label(S.S0_START, 30, Kit.C_PAPER, 700)
+	g.add_child(Kit.place(_gate_start, 0, 412, 1280, 48))
+	g.add_child(Kit.place(Kit.label(S.S0_KEYBOARD, 18, Kit.C_DIM, 500), 0, 462, 1280, 30))
 	_touch_note = Kit.label(S.TOUCH, 22, Kit.C_WARN, 700)
 	_touch_note.visible = false
-	g.add_child(Kit.place(_touch_note, 0, 470, 1280, 40))
-	stage.add_child(g)
-	current = g
+	_touch_note.add_theme_stylebox_override("normal", note_box(Kit.C_WARN))
+	g.add_child(Kit.place(_touch_note, 290, 520, 700, 48))
+	_show(g, "fade")
 	_set_screen("gate")
 
 
@@ -147,8 +223,25 @@ func _input(event: InputEvent) -> void:
 		current.key(event)
 
 
-# smoke: S0 → 入口 → 結果まで自動で進める。
+# 案内の札の地(墨の板に、色の縁を左に)。
+static func note_box(edge: Color) -> StyleBoxFlat:
+	var b := StyleBoxFlat.new()
+	b.bg_color = Color(Kit.C_INK, 0.9)
+	b.border_color = edge
+	b.border_width_left = 6
+	b.set_corner_radius_all(4)
+	b.content_margin_left = 18
+	b.content_margin_right = 18
+	return b
+
+
+# 動きを進め、smoke では S0 → 入口 → 結果まで自動で進める。
 func _process(_delta: float) -> void:
+	if not entering.is_empty():
+		_step_entering()
+	if _gate_start != null and is_instance_valid(_gate_start):
+		var k := float(Time.get_ticks_msec() % B.GATE_PULSE_MS) / B.GATE_PULSE_MS
+		_gate_start.modulate.a = 1.0 if reduce_motion() else 0.78 + 0.22 * cos(k * TAU)
 	if auto == "":
 		return
 	if screen == "gate":
@@ -167,10 +260,10 @@ func _process(_delta: float) -> void:
 func _show_title() -> void:
 	_clear()
 	var t := Title.new()
+	t.animate = not reduce_motion()
 	t.build(store)
 	t.chosen.connect(_on_title)
-	stage.add_child(t)
-	current = t
+	_show(t, "wipe")
 	_set_screen("title")
 
 
@@ -178,7 +271,7 @@ func _on_title(what: String) -> void:
 	if what == "settings":
 		_show_settings("title")
 	elif MODES.has(what):
-		_start(MODES[what], first_match)
+		_start(MODES[what], first_match, "wipe")
 		first_match = false
 
 
@@ -189,7 +282,8 @@ static func _new_seed() -> int:
 
 # --- S2 プレイ ---
 
-func _start(mode: int, with_practice: bool) -> void:
+# motion: タイトルからは "wipe"。もう1回・やり直すは "none"(押してすぐ遊べるように動きを付けない)。
+func _start(mode: int, with_practice: bool, motion: String = "none") -> void:
 	_clear()
 	run_mode = mode
 	play = Play.new()
@@ -197,11 +291,10 @@ func _start(mode: int, with_practice: bool) -> void:
 	play.shake_on = st["shake"]
 	play.reduce_flash = st["reduce_flash"]
 	play.auto_p1 = auto != ""
-	stage.add_child(play)
+	_show(play, motion)
 	play.start(mode, with_practice, _new_seed())
 	play.finished.connect(_on_finished)
 	play.pause_requested.connect(_pause)
-	current = play
 	_set_screen("play")
 
 
@@ -212,7 +305,11 @@ func _pause() -> void:
 	pause_view = Pause.new()
 	pause_view.build()
 	pause_view.picked.connect(_on_pause)
+	pause_view.set_view(view)
 	stage.add_child(pause_view)
+	stage.move_child(wipe, -1)
+	if not reduce_motion():
+		_animate_in(pause_view, B.PAUSE_IN_MS, 0.0)
 
 
 func _on_pause(what: String) -> void:
@@ -264,8 +361,7 @@ func _on_finished(result: Dictionary) -> void:
 	v.build(mode, result, record, saved)
 	v.retry.connect(func() -> void: _start(mode, false))  # FR-22: 同じ入口、練習は入らない
 	v.to_title.connect(_show_title)
-	stage.add_child(v)
-	current = v
+	_show(v, "wipe")
 	_set_screen("result")
 
 
@@ -280,16 +376,14 @@ func _show_settings(from: String) -> void:
 		pause_view.visible = false
 		pause_view.process_mode = Node.PROCESS_MODE_DISABLED
 		var dim := ColorRect.new()
-		dim.color = Color(Kit.C_BG, 0.96)
+		dim.color = Color(Kit.C_BG, 0.97)
 		s.add_child(Kit.place(dim, -2000, -2000, 5280, 4720))
 		s.move_child(dim, 0)
-		stage.add_child(s)
 		_settings_overlay = s
-		current = s
+		_show(s, "fade")
 	else:
 		_clear()
-		stage.add_child(s)
-		current = s
+		_show(s, "wipe")
 	_set_screen("settings")
 
 
@@ -316,13 +410,20 @@ func _show_keys() -> void:
 	_clear()
 	var g := Control.new()
 	g.size = Vector2(1280, 720)
-	g.add_child(Kit.place(Kit.label(S.KEYS_TITLE, 22, Kit.C_TEXT, 700), 0, 20, 1280, 40))
-	_keys_label = Kit.label("", 18, Kit.C_TEXT, 400)
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	g.add_child(Kit.place(Kit.label(S.KEYS_TITLE, 24, Kit.C_TEXT, 700), 0, 18, 1280, 44))
+	_keys_label = Kit.label("", 16, Kit.C_TEXT, 500)
 	_keys_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_keys_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	g.add_child(Kit.place(_keys_label, 60, 80, 1160, 620))
-	stage.add_child(g)
-	current = g
+	var sheet := StyleBoxFlat.new()
+	sheet.bg_color = Color(Kit.C_INK, 0.92)
+	sheet.border_color = Kit.C_EDGE
+	sheet.set_border_width_all(2)
+	sheet.set_corner_radius_all(6)
+	sheet.set_content_margin_all(16)
+	_keys_label.add_theme_stylebox_override("normal", sheet)
+	g.add_child(Kit.place(_keys_label, 60, 72, 1160, 600))
+	_show(g, "fade")
 	_set_screen("keys")
 
 

@@ -134,6 +134,17 @@ func _draw() -> void:
 	var loser := 1 - ef_winner if ef_winner >= 0 else -1
 	# 盤の地とマス目
 	var board := Rect2(B.GRID_X, B.GRID_Y, Grid.W * B.CELL, Grid.H * B.CELL)
+	# 盤の縁(v0.3.0): 卓に置いた盤に見えるよう、墨の縁と下の厚み、四隅に象牙の角金
+	# 縁と厚みは帯だけを描き、盤の地と重ねて塗らない(見た目は重ねて塗るのと同じ)
+	draw_rect(Rect2(board.position.x - 6, board.end.y + 6, board.size.x + 12, 6), Color("05080F"))
+	draw_rect(board.grow(3), Kit.C_INK, false, 6.0)
+	draw_rect(board, Kit.C_BOARD)
+	for cx: float in [board.position.x - 6, board.end.x + 6]:
+		for cy: float in [board.position.y - 6, board.end.y + 6]:
+			var sx := 1.0 if cx < board.get_center().x else -1.0
+			var sy := 1.0 if cy < board.get_center().y else -1.0
+			draw_line(Vector2(cx, cy), Vector2(cx + sx * 22, cy), Color(Kit.C_PAPER, 0.55), 3.0)
+			draw_line(Vector2(cx, cy), Vector2(cx, cy + sy * 22), Color(Kit.C_PAPER, 0.55), 3.0)
 	for x in range(1, Grid.W):
 		draw_line(Vector2(B.GRID_X + x * B.CELL, B.GRID_Y), Vector2(B.GRID_X + x * B.CELL, board.end.y), Kit.C_GRID, 1.0)
 	for y in range(1, Grid.H):
@@ -264,8 +275,8 @@ func _draw() -> void:
 		var fs := int(26 * (B.BIG_SCALE if f[3] else 1.0) * pop)
 		var pos: Vector2 = f[1] - Vector2(100, B.FLOAT_RISE_PX * k)
 		var alpha := 1.0 - k * k
-		draw_string_outline(Kit.font(800), pos, f[2], HORIZONTAL_ALIGNMENT_CENTER, 200, fs, 6, Color(Kit.C_BG, alpha))
-		draw_string(Kit.font(800), pos, f[2], HORIZONTAL_ALIGNMENT_CENTER, 200, fs, Color(Kit.C_TRAIL[int(f[4])].lerp(Kit.C_WHITE, 0.25), alpha))
+		draw_string_outline(Kit.num_font(), pos, f[2], HORIZONTAL_ALIGNMENT_CENTER, 200, fs, 6, Color(Kit.C_BG, alpha))
+		draw_string(Kit.num_font(), pos, f[2], HORIZONTAL_ALIGNMENT_CENTER, 200, fs, Color(Kit.C_TRAIL[int(f[4])].lerp(Kit.C_WHITE, 0.25), alpha))
 
 
 # 切られた線の 1 マスぶんの欠片 2 つ。切った点から外へ飛び、落ちながら小さくなって消える。

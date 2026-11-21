@@ -166,7 +166,7 @@ func test_fr19_hud_percent_time_round() -> bool:
 	eq(m.play._hud["round"].text, "練習(数えない)", "練習の間")
 	eq(m.play._hud["time"].text, "0:15", "練習は 15 秒")
 	eq(m.play._hud["name0"].text, "あなた", "CPU の試合では「あなた」")
-	eq(m.play._hud["keys0"].text, "W A S D / 矢印", "キーの札")
+	eq(m.play._hud["keys0"].items, [[["W", "A", "S", "D"], "か"], [["up", "left", "down", "right"], ""]], "キーの札(矢印は絵のキー)")
 	eq(m.play._hud["name1"].text, "CPU やさしい", "P2 は CPU")
 	ok(m.play._note.visible, "練習の案内")
 	eq(m.play._count.text, "3", "数え")
@@ -215,8 +215,8 @@ func test_duo_keys_split() -> bool:
 	kp(m, KEY_DOWN)
 	kp(m, KEY_ENTER)
 	eq(m.play.mode, Sim.MODE_DUO, "ふたりで")
-	eq(m.play._hud["keys0"].text, "W A S D", "左の人")
-	eq(m.play._hud["keys1"].text, "↑←↓→", "右の人")
+	eq(m.play._hud["keys0"].items, [[["W", "A", "S", "D"], ""]], "左の人")
+	eq(m.play._hud["keys1"].items, [[["up", "left", "down", "right"], ""]], "右の人")
 	kp(m, KEY_W)
 	kp(m, KEY_DOWN)
 	eq(m.play.sim.queues, [[0], [2]], "W は P1、↓ は P2(FR-2)")
@@ -481,4 +481,83 @@ func test_float_stays_inside_board_near_top() -> bool:
 	ok((b.floats[0][1] as Vector2).y - B.FLOAT_RISE_PX >= B.GRID_Y, "上の行で囲んでも「+n」は盤の中で浮かぶ")
 	eq(int(b.floats[0][4]), 1, "数字は囲んだ人の色")
 	b.free()
+	return true
+
+
+# v0.3.0 の UI: 画面の切り替わりは入りの動きを上に重ねるだけで、その場で次の画面になる(動いている間のキーも届く)。
+func test_v030_transitions_never_delay_input() -> bool:
+	var m := _main()
+	kp(m, KEY_X)
+	eq(m.screen, "title", "キーでその場でタイトル")
+	ok(not m.entering.is_empty() and m.wipe.progress() < 1.0, "タイトルはマスの切り替わりと入りの動き")
+	ok(m.backdrop.demo and m.backdrop.animate, "タイトルの背景は 2 陣の陣取りが動く")
+	kp(m, KEY_ENTER)
+	eq(m.screen, "play", "入りの動きの途中の Enter も届く")
+	ok(not m.backdrop.demo, "遊びの画面の背景はマス目だけ")
+	win_match(m)
+	eq(m.screen, "result", "結果")
+	m.current._shown_at -= 1000
+	frames(m, 1)
+	kp(m, KEY_ENTER)
+	eq(m.screen, "play", "もう1回")
+	ok(m.entering.is_empty() and m.play.modulate.a == 1.0, "もう1回は動きを付けずにすぐ遊べる")
+	_done(m)
+	return true
+
+
+func test_v030_reduce_motion_stops_transitions() -> bool:
+	var m := _main()
+	m.store.set_setting("reduce_flash", true)
+	kp(m, KEY_X)
+	eq(m.screen, "title", "タイトル")
+	ok(m.entering.is_empty(), "点滅を弱める 入では入りの動きを付けない")
+	eq(m.wipe.progress(), 1.0, "マスの切り替わりも走らない")
+	ok(not m.backdrop.animate, "背景も止める")
+	ok(not m.current.animate, "題字の動きも止める")
+	_done(m)
+	return true
+
+
+func test_v030_motion_math() -> bool:
+	var Main: GDScript = load("res://ui/main.gd")
+	eq(Main.enter_alpha(0, B.ENTER_MS), 0.0, "入りの初め")
+	eq(Main.enter_alpha(B.ENTER_MS, B.ENTER_MS), 1.0, "入りの終わり")
+	var Backdrop: GDScript = load("res://ui/backdrop.gd")
+	var r := Rect2(0, 0, 10, 5)
+	eq(Backdrop.perimeter_point(r, 0.0), Vector2(0, 0), "輪の始め(左上)")
+	eq(Backdrop.perimeter_point(r, 10.0 / 30.0), Vector2(10, 0), "右上の角")
+	eq(Backdrop.perimeter_point(r, 0.5), Vector2(10, 5), "右下の角")
+	var w: Control = (load("res://ui/wipe.gd") as GDScript).new()
+	w.start_ms = 1000
+	w.now_ms = 1000 + B.WIPE_MS
+	eq(w.progress(), 1.0, "WIPE_MS で終わる")
+	w.free()
+	# 背景は地を塗らず、消去の色に任せる。消去の色が卓の色でないと、地が別の色になる
+	var clear: Color = ProjectSettings.get_setting("rendering/environment/defaults/default_clear_color")
+	ok(clear.to_html(false) == Kit.C_BG.to_html(false), "消去の色が卓の色 %s" % clear.to_html(false))
+	# 模様の 1 マスの絵: P1 は真ん中が濃く角が透明、P2 は対角の上が濃い
+	var dot: Image = Kit.pattern_image(0, 24)
+	ok(dot.get_pixel(12, 12).a > 0.9 and dot.get_pixel(0, 0).a == 0.0, "P1 の模様は真ん中の点")
+	var slash: Image = Kit.pattern_image(1, 24)
+	ok(slash.get_pixel(12, 12).a > 0.5 and slash.get_pixel(20, 3).a == 0.0, "P2 の模様は対角の斜線")
+	return true
+
+
+# 結果: 勝ち数を数え上げ、「もう1回」は押せない 300 ms の間も選んだ見た目で出す。
+func test_v030_result_counts_up_and_retry_selected() -> bool:
+	var m := _main()
+	kp(m, KEY_X)
+	kp(m, KEY_ENTER)
+	win_match(m)
+	var r: Control = m.current
+	ok(r._retry.disabled, "初めは押せない")
+	eq(r._retry.theme_type_variation, &"SelButton", "押せない間も「もう1回」が選んだ見た目")
+	r.now_ms = r._shown_at + 1
+	eq(r.shown_wins(), [0, 0], "数え上げの初め")
+	r.now_ms = r._shown_at + B.RESULT_COUNT_MS
+	eq(r.shown_wins(), [3, 0], "数え上げの終わりは試合の勝ち数")
+	r.animate = false
+	r.now_ms = 0
+	eq(r.shown_wins(), [3, 0], "動きを止めると初めから全部")
+	_done(m)
 	return true
