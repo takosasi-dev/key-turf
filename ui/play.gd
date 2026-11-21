@@ -65,6 +65,7 @@ func _ready() -> void:
 	plates.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(Kit.place(plates, 0, 0, 1280, 72))
 	plates.draw.connect(_draw_plates.bind(plates))
+	plates.show_behind_parent = true  # 板の上に、この画面の _draw が描く勝ち数の印を出す(子は親より上に描かれ、印が板に隠れていた)
 	board = Board.new()
 	Kit.place(board, 0, 0, 1280, 720)
 	add_child(board)

@@ -170,6 +170,7 @@ func test_fr19_hud_percent_time_round() -> bool:
 	eq(m.play._hud["name1"].text, "CPU やさしい", "P2 は CPU")
 	ok(m.play._note.visible, "練習の案内")
 	eq(m.play._count.text, "3", "数え")
+	ok((m.play.get_child(0) as Control).show_behind_parent, "上の帯の板は画面の _draw(勝ち数の印)より下に描く")
 	frames(m, 30)
 	eq(m.play._count.text, "2", "0.5 秒ごと")
 	frames(m, 61)
